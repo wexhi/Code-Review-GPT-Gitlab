@@ -93,8 +93,9 @@ class ReviewResponse:
         ret = True
         for target, msg_group in msg_groups.items():
             reply_target = ResponseFactory.get_message_instance(target, self.config)
-            for msg in msg_group:
-                ret &= reply_target.send(msg)
+            for group_id, messages in msg_group.items():
+                for msg in messages:
+                    ret &= reply_target.send(msg)
         return ret
 
 

@@ -22,6 +22,9 @@ class DefaultApi(AbstractApi):
                 continue
             self.params[key] = api_config[key]
             
+        # Enable verbose logging for debugging
+        os.environ['LITELLM_LOG'] = 'DEBUG'
+        
         return True
 
     def generate_text(self, messages: list) -> bool:
@@ -32,7 +35,11 @@ class DefaultApi(AbstractApi):
         return True
 
     def get_respond_content(self) -> str:
+        if self.response is None:
+            raise ValueError("Response is None. Call generate_text first.")
         return self.response['choices'][0]['message']['content']
 
     def get_respond_tokens(self) -> int:
+        if self.response is None:
+            raise ValueError("Response is None. Call generate_text first.")
         return trunc(int(self.response['usage']['total_tokens']))

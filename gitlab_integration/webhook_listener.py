@@ -20,8 +20,17 @@ class WebhookListener:
         """
         gitlab_payload = request.data.decode('utf-8')
         gitlab_payload = json.loads(gitlab_payload)
-        log.info(f"🌈 ：{gitlab_payload}")
+        
+        # 提取关键信息用于日志
         event_type = gitlab_payload.get('object_kind')
+        if event_type == 'merge_request':
+            object_attributes = gitlab_payload.get('object_attributes', {})
+            project_info = gitlab_payload.get('project', {})
+            log.info(f"📋 MR #{object_attributes.get('iid', 'Unknown')} - {object_attributes.get('title', 'Unknown')} (项目: {project_info.get('name', 'Unknown')})")
+            log.info(f"📊 状态: {object_attributes.get('state')}/{object_attributes.get('action')}/{object_attributes.get('merge_status')}")
+        else:
+            log.info(f"📋 收到Webhook: {event_type}")
+        
         return self.call_handle(gitlab_payload, event_type)
 
     def call_handle(self, gitlab_payload, event_type):
@@ -54,9 +63,9 @@ class WebhookListener:
         处理合并请求事件
         """
         if is_merge_request_opened(gitlab_payload):
-            log.info("首次merge_request ", gitlab_payload)
             project_id = gitlab_payload.get('project')['id']
             merge_request_iid = gitlab_payload.get("object_attributes")["iid"]
+            log.info(f"🚀 开始处理MR #{merge_request_iid}")
             review_engine = ReviewEngine(reply)
             gitlabMergeRequestFetcher = GitlabMergeRequestFetcher(project_id, merge_request_iid)
             gitlabRepoManager = GitlabRepoManager(project_id)

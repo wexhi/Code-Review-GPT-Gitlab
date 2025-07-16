@@ -13,10 +13,21 @@ llm_api_impl = "large_model.api.default_api.DefaultApi"
 # 默认使用认UnionLLM，参考：https://github.com/EvalsOne/UnionLLM/tree/main/docs
 # UnionLLM兼容LiteLLM，参考LiteLLM文档：https://docs.litellm.ai/docs
 
+# 当前的 DeepSeek 配置
+# api_config = {
+#     "api_key": os.getenv("DEEPSEEK_API_KEY", ""),
+#     "model": 'deepseek-chat',
+#     "provider": "deepseek",
+# }
+
+# 改为 Gemini 配置
 api_config = {
-    "api_key": os.getenv("DEEPSEEK_API_KEY", ""),
-    "model": 'deepseek-chat',
-    "provider": "deepseek",
+    "api_key": os.getenv("GEMINI_API_KEY", ""),  # 或直接写入 "your-gemini-api-key"
+    "model": 'gemini-2.5-pro',  # 或其他 Gemini 模型
+    "provider": "gemini",
+    "temperature": 0.7,  # 可选参数
+    "max_tokens": 4096,  # 设置输出token限制
+    "set_verbose": True,  # 启用详细日志用于调试
 }
 
 # demo-proxy-gpt
@@ -82,23 +93,50 @@ MAX_FILES = 50
 
 # ------------- Message notification --------------------
 # dingding notification （un necessary）
-DINGDING_BOT_WEBHOOK = os.getenv("DINGDING_BOT_WEBHOOK", "")
-DINGDING_SECRET = os.getenv("DINGDING_SECRET", "")
+DINGDING_BOT_WEBHOOK = ""  # 设为空字符串禁用钉钉通知
+DINGDING_SECRET = ""       # 设为空字符串禁用钉钉通知
 
 
 # ------------- code review settings --------------------
-# expect file types
-EXCLUDE_FILE_TYPES = ['.py', '.java', '.class', '.vue', ".go",".c",".cpp"]
+# 支持审查的文件类型
+SUPPORTED_FILE_TYPES = ['.py', '.java', '.class', '.vue', ".go", ".c", ".cpp", ".dart"]
 
-# ignore file types
+# 忽略审查的文件类型
 IGNORE_FILE_TYPES = ["mod.go"]
 
 # context code lines 上下文关联代码行数
 CONTEXT_LINES_NUM = 5
+
+# 内容长度限制设置
+MAX_CONTENT_LENGTH = 500000  # 最大内容长度（字符数）
+MAX_DIFF_LENGTH = 100000     # 最大diff长度（字符数）
+MAX_SOURCE_LENGTH = 200000   # 最大源代码长度（字符数）
+
+# ------------- 重复控制设置 --------------------
+# 是否启用重复评论检查（避免重复发送相同内容）
+ENABLE_DUPLICATE_CHECK = os.getenv("ENABLE_DUPLICATE_CHECK", "true").split('#')[0].strip().lower() == "true"
+
+# 评论相似度阈值（0.0-1.0，数值越高要求越严格）
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.8").split('#')[0].strip())
+
+# 是否只在MR首次打开时审查（避免多次触发）
+REVIEW_ONLY_ON_FIRST_OPEN = os.getenv("REVIEW_ONLY_ON_FIRST_OPEN", "false").split('#')[0].strip().lower() == "true"
+
+# 是否在MR更新时重新审查（仅在REVIEW_ONLY_ON_FIRST_OPEN=false时生效）
+REVIEW_ON_UPDATE = os.getenv("REVIEW_ON_UPDATE", "true").split('#')[0].strip().lower() == "true"
+
+# 是否对MR中的每个commit进行单独审查
+REVIEW_PER_COMMIT = os.getenv("REVIEW_PER_COMMIT", "false").split('#')[0].strip().lower() == "true"
+
+# 每个commit审查的最大文件数限制
+MAX_FILES_PER_COMMIT = int(os.getenv("MAX_FILES_PER_COMMIT", "20").split('#')[0].strip())
+
+# Per-commit审查模式：simple（简化模式，只关注diff）或 detailed（详细模式，包含完整分析）
+COMMIT_REVIEW_MODE = os.getenv("COMMIT_REVIEW_MODE", "simple").split('#')[0].strip().lower()
 
 # Validate required environment variables
 if not GITLAB_PRIVATE_TOKEN:
     raise ValueError("GITLAB_PRIVATE_TOKEN environment variable is required")
 
 if not api_config["api_key"]:
-    raise ValueError("DEEPSEEK_API_KEY environment variable is required")
+    raise ValueError("GEMINI_API_KEY environment variable is required")

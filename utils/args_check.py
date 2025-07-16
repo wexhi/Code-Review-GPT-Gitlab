@@ -1,7 +1,7 @@
 import requests
 from tabulate import tabulate
 
-from config.config import EXCLUDE_FILE_TYPES, IGNORE_FILE_TYPES
+from config.config import SUPPORTED_FILE_TYPES, IGNORE_FILE_TYPES
 def check_config():
     """
     Check the configuration
@@ -185,11 +185,11 @@ def file_need_check(file_path: str) -> bool:
     :param file_path: 文件路径
     :return: 如果文件需要检查则返回True，否则返回False
     """
-    is_excluded_file_type = any(file_path.endswith(ext) for ext in EXCLUDE_FILE_TYPES)
+    is_supported_file_type = any(file_path.endswith(ext) for ext in SUPPORTED_FILE_TYPES)
     
     is_ignored_file_type = any(file_path.endswith(ext) for ext in IGNORE_FILE_TYPES)
     
-    return is_excluded_file_type and not is_ignored_file_type
+    return is_supported_file_type and not is_ignored_file_type
 
 # 示例调用
 if __name__ == "__main__":

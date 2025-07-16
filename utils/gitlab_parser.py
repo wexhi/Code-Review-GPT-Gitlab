@@ -106,7 +106,8 @@ def get_context_boundaries(diff_range, source_code_length, context_lines_num=CON
 
 def add_context_to_diff(diff_content, source_code=None, context_lines_num=CONTEXT_LINES_NUM):
     """在diff内容前后添加上下文代码"""
-
+    from utils.logger import log
+    
     # 过滤diff内容
     filtered_diff = filter_diff_content(diff_content)
 
@@ -114,6 +115,7 @@ def add_context_to_diff(diff_content, source_code=None, context_lines_num=CONTEX
     diff_ranges = []
     filtered_contents = []
     diffs = extract_diffs(diff_content)
+    
     for diff in diffs:
         # 获取单个diff的行号范围
         diff_ranges.append(extract_diff_line_range(diff))
@@ -125,8 +127,6 @@ def add_context_to_diff(diff_content, source_code=None, context_lines_num=CONTEX
     if source_code and diff_ranges:
         code_lines = source_code.splitlines()
         source_code_length = len(code_lines)
-
-
 
         for filtered_content, diff_range in zip(filtered_contents, diff_ranges):
             front_lines = ""
@@ -147,10 +147,10 @@ def add_context_to_diff(diff_content, source_code=None, context_lines_num=CONTEX
                     back_lines +=  code_lines[line - 1] + '\n'
                 diff_with_context += f"修改代码块后代码：\n{back_lines}\n"
 
-
             diff_with_contexts += diff_with_context + '\n'
 
-    return diff_with_contexts if diff_with_contexts else filtered_diff
+    result = diff_with_contexts if diff_with_contexts else filtered_diff
+    return result
 
 
 def get_comment_request_json(comment, change, old_line, new_line, diff_refs):

@@ -2,7 +2,7 @@ import concurrent.futures
 import threading
 
 from retrying import retry
-from config.config import GPT_MESSAGE, MAX_FILES
+from config.config import GPT_MESSAGE, MAX_FILES, SUPPORTED_FILE_TYPES, IGNORE_FILE_TYPES, MAX_CONTENT_LENGTH, MAX_DIFF_LENGTH, MAX_SOURCE_LENGTH
 from review_engine.abstract_handler import ReviewHandle
 from utils.gitlab_parser import (filter_diff_content, add_context_to_diff, extract_diffs,
                                  get_comment_request_json, extract_comment_end_line)
@@ -14,29 +14,51 @@ from review_engine.review_prompt import (REVIEW_SUMMARY_SETTING, FILE_DIFF_REVIE
 
 
 def chat_review(changes, generate_review, *args, **kwargs):
-    log.info('开始code review')
+    log.info(f'开始code review - 共 {len(changes)} 个文件')
+    
+    # 只记录需要审查的文件
+    reviewable_files = []
+    for change in changes:
+        file_path = change["new_path"]
+        if file_need_check(file_path):
+            reviewable_files.append(file_path)
+    
+    if reviewable_files:
+        log.info(f'📄 需要审查的文件: {", ".join(reviewable_files)}')
+    else:
+        log.info('📄 没有需要审查的文件')
+    
     with concurrent.futures.ThreadPoolExecutor() as executor:
         review_results = []
         result_lock = threading.Lock()
 
         def process_change(change):
-            result = generate_review(change, *args, **kwargs)
-            with result_lock:
-                review_results.append(result)
+            file_path = change["new_path"]
+            log.info(f'🔍 开始处理文件: {file_path}')
+            try:
+                result = generate_review(change, *args, **kwargs)
+                log.info(f'✅ 完成处理文件: {file_path}')
+                with result_lock:
+                    review_results.append(result)
+            except Exception as e:
+                log.error(f'❌ 处理文件 {file_path} 时出错: {e}')
 
         futures = []
+        processed_count = 0
         for change in changes:
             if not file_need_check(change["new_path"]):
                 log.info(f"{change['new_path']} 非目标检测文件！")
                 continue
             
+            processed_count += 1
             futures.append(executor.submit(process_change, change))
 
+        log.info(f'📊 将处理 {processed_count} 个文件，跳过 {len(changes) - processed_count} 个文件')
+        
         # 等待所有任务完成
         concurrent.futures.wait(futures)
 
-    # 合并结果
-
+    log.info(f'✅ Code review 完成，生成了 {len(review_results)} 个审查结果')
     return "<details open><summary><h1>修改文件列表</h1></summary>" + "\n\n".join(review_results) +"</details>" if review_results else ""
 
 
@@ -82,7 +104,11 @@ def chat_review_summary(changes, model):
              }
         ]
         model.generate_text(batch_summary_msg)
-        summaries_content = model.get_respond_content().replace('\n\n', '\n')
+        content = model.get_respond_content()
+        if not content:
+            log.error("LLM返回内容为空 (chat_review_summary)")
+            return ""
+        summaries_content = content.replace('\n\n', '\n')
 
     # 总结生成 summary 和 file summary 表格
     final_summaries_content = SUMMARY_OUTPUT_PROMPT.replace("$summaries_content", summaries_content)
@@ -147,7 +173,11 @@ def generate_inline_comment(diff, model):
         },
     ]
     model.generate_text(messages)
-    response_content = model.get_respond_content().replace('\n\n', '\n')
+    content = model.get_respond_content()
+    if not content:
+        log.error("LLM返回内容为空 (generate_inline_comment)")
+        return "comment: nothing obtained from LLM"
+    response_content = content.replace('\n\n', '\n')
     if response_content:
         return response_content
     else:
@@ -169,8 +199,14 @@ def generate_diff_summary(file=None, diff=None, model=None, messages=None):
             "content": f"{file_diff_prompt}",
         },
     ] if messages is None else messages
+    if model is None:
+        return "summarize: model is None"
     model.generate_text(messages)
-    response_content = model.get_respond_content().replace('\n\n', '\n')
+    content = model.get_respond_content()
+    if not content:
+        log.error("LLM返回内容为空 (generate_diff_summary)")
+        return "summarize: nothing obtained from LLM"
+    response_content = content.replace('\n\n', '\n')
     if response_content:
         return response_content
     else:
@@ -181,9 +217,48 @@ def generate_diff_summary(file=None, diff=None, model=None, messages=None):
 def generate_review_note_with_context(change, model, gitlab_fetcher, merge_info):
     try:
         # prepare
-        source_code = gitlab_fetcher.get_file_content(change['new_path'], merge_info['source_branch'])
         new_path = change['new_path']
-        content = add_context_to_diff(change['diff'], source_code)
+        log.info(f"📄 开始处理文件: {new_path}")
+        log.info(f"📋 分支信息: {merge_info['source_branch']}")
+        
+        # 获取源代码
+        source_code = gitlab_fetcher.get_file_content(change['new_path'], merge_info['source_branch'])
+        
+        # 检查diff内容
+        diff_content = change['diff']
+        if not diff_content:
+            log.warning(f"⚠️ 文件 {new_path} 的diff内容为空")
+            return ""
+        
+        # 检查diff长度限制
+        if len(diff_content) > MAX_DIFF_LENGTH:
+            log.warning(f"⚠️ 文件 {new_path} 的diff内容过长，将被截断")
+            diff_content = diff_content[:MAX_DIFF_LENGTH] + "\n\n... (内容过长，已截断)"
+        
+        # 检查源代码长度限制
+        if source_code and len(source_code) > MAX_SOURCE_LENGTH:
+            log.warning(f"⚠️ 文件 {new_path} 的源代码过长，将不添加上下文")
+            source_code = None
+        
+        # 添加上下文
+        content = add_context_to_diff(diff_content, source_code)
+        
+        # 检查最终内容长度限制
+        if content and len(content) > MAX_CONTENT_LENGTH:
+            log.warning(f"⚠️ 文件 {new_path} 的最终内容过长，将被截断")
+            content = content[:MAX_CONTENT_LENGTH] + "\n\n... (内容过长，已截断)"
+        
+        # 检查最终内容
+        if not content or content.strip() == "":
+            log.warning(f"⚠️ 文件 {new_path} 处理后内容为空，跳过审查")
+            return ""
+        
+        # 构建消息
+        user_message = f"请review这部分代码变更 {content}"
+        if len(user_message.strip()) <= 10:
+            log.warning(f"⚠️ 文件 {new_path} 用户消息过短，跳过审查")
+            return ""
+            
         messages = [
             {
                 "role": "system",
@@ -191,15 +266,18 @@ def generate_review_note_with_context(change, model, gitlab_fetcher, merge_info)
              },
             {
                 "role": "user",
-                "content": f"请review这部分代码变更 {content}",
+                "content": user_message,
             },
         ]
         
         # review
-        log.info(f"发送给 LLM 内容如下：{messages}")
+        log.info(f"📤 正在审查文件: {new_path}")
         model.generate_text(messages)
-        log.info(f'对 {new_path} review中...')
-        response_content = model.get_respond_content().replace('\n\n', '\n')
+        content = model.get_respond_content()
+        if not content:
+            log.error(f"LLM返回内容为空 (generate_review_note_with_context) for {new_path}")
+            return ""
+        response_content = content.replace('\n\n', '\n')
         total_tokens = model.get_respond_tokens()
 
         # response
@@ -210,7 +288,7 @@ def generate_review_note_with_context(change, model, gitlab_fetcher, merge_info)
         # review_note += f'({total_tokens} tokens) {"AI review 意见如下:"}' + '\n\n'
         # review_note += response_content + "\n\n---\n\n---\n\n"
         
-        log.info(f'对 {new_path} review结束')
+        log.info(f'✅ 文件 {new_path} 审查完成')
         return review_note
     
     except Exception as e:

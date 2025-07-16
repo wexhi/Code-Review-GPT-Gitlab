@@ -101,6 +101,65 @@ class GitlabMergeRequestFetcher:
         else:
             return None
 
+    @retry(stop_max_attempt_number=3, wait_fixed=2000)
+    def get_commits(self, force=False):
+        """
+        Get the commits of the merge request
+        :return: commits list
+        """
+        if hasattr(self, '_commits_cache') and self._commits_cache and not force:
+            return self._commits_cache
+        # URL for the GitLab API endpoint
+        url = f"{GITLAB_SERVER_URL}/api/v4/projects/{self.project_id}/merge_requests/{self.iid}/commits"
+
+        # Headers for the request
+        headers = {
+            "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN
+        }
+
+        # Make the GET request
+        response = requests.get(url, headers=headers)
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            self._commits_cache = response.json()
+            return response.json()
+        else:
+            log.error(f"获取MR commits失败: {response.status_code} {response.text}")
+            return []
+
+    @retry(stop_max_attempt_number=3, wait_fixed=2000)
+    def get_commit_changes(self, commit_id, force=False):
+        """
+        Get the changes of a specific commit
+        :param commit_id: The commit SHA
+        :return: changes for this commit
+        """
+        cache_key = f"commit_{commit_id}"
+        if hasattr(self, '_commit_changes_cache') and cache_key in self._commit_changes_cache and not force:
+            return self._commit_changes_cache[cache_key]
+        
+        # URL for the GitLab API endpoint
+        url = f"{GITLAB_SERVER_URL}/api/v4/projects/{self.project_id}/repository/commits/{commit_id}/diff"
+
+        # Headers for the request
+        headers = {
+            "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN
+        }
+
+        # Make the GET request
+        response = requests.get(url, headers=headers)
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            if not hasattr(self, '_commit_changes_cache'):
+                self._commit_changes_cache = {}
+            self._commit_changes_cache[cache_key] = response.json()
+            return response.json()
+        else:
+            log.error(f"获取commit {commit_id} 变更失败: {response.status_code} {response.text}")
+            return []
+
 # gitlab仓库clone和管理
 class GitlabRepoManager:
     def __init__(self, project_id, branch_name = ""):
@@ -142,7 +201,10 @@ class GitlabRepoManager:
         self.delete_repo()
 
         # Build the authenticated URL
-        authenticated_url = self._build_authenticated_url(self.get_info()["http_url_to_repo"])
+        repo_info = self.get_info()
+        if not repo_info or "http_url_to_repo" not in repo_info:
+            raise ValueError("无法获取仓库信息或http_url_to_repo")
+        authenticated_url = self._build_authenticated_url(repo_info["http_url_to_repo"])
 
         # Build the Git command
         command = ["git", "clone", authenticated_url, "--depth", "1"]
@@ -207,12 +269,47 @@ class GitlabRepoManager:
 
 def is_merge_request_opened(gitlab_payload) -> bool:
     """
-    判断是否是merge request打开事件
+    判断是否是需要审查的merge request事件
+    支持首次打开和更新事件，但通过其他机制防止重复
     """
     try:
-        gitlab_merge_request_old  = gitlab_payload.get("object_attributes").get("state") == "opened" and gitlab_payload.get("object_attributes").get("merge_status") == "preparing"
-        gitlab_merge_request_new = gitlab_payload.get("object_attributes").get("state") == "merged" and gitlab_payload.get("object_attributes").get("merge_status") == "can_be_merged"
-        return gitlab_merge_request_old or gitlab_merge_request_new
+        from config.config import REVIEW_ONLY_ON_FIRST_OPEN, REVIEW_ON_UPDATE
+        
+        if not gitlab_payload or not isinstance(gitlab_payload, dict):
+            return False
+            
+        object_attributes = gitlab_payload.get("object_attributes")
+        if not object_attributes or not isinstance(object_attributes, dict):
+            return False
+            
+        state = object_attributes.get("state")
+        merge_status = object_attributes.get("merge_status")
+        action = object_attributes.get("action")
+        
+        if REVIEW_ONLY_ON_FIRST_OPEN:
+            # 严格模式：只在MR首次打开时触发
+            is_first_open = (
+                state == "opened" and 
+                merge_status in ["preparing", "unchecked"] and 
+                action == "open"
+            )
+            log.info(f"严格模式检查: {is_first_open}")
+            return is_first_open
+        else:
+            # 灵活模式：根据配置决定是否在更新时审查
+            allowed_actions = ["open"]
+            if REVIEW_ON_UPDATE:
+                allowed_actions.append("update")
+            
+            is_reviewable = (
+                state == "opened" and 
+                merge_status in ["preparing", "can_be_merged", "unchecked"] and 
+                action in allowed_actions
+            )
+            
+            log.info(f"灵活模式检查: {is_reviewable}")
+            return is_reviewable
+        
     except Exception as e:
         log.error(f"判断是否是merge request打开事件失败: {e}")
         return False

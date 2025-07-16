@@ -2,7 +2,7 @@ import base64
 import hashlib
 import hmac
 import time
-import urllib
+import urllib.parse
 import requests
 import json
 from config.config import *
@@ -19,6 +19,11 @@ class DingtalkResponse(AbstractResponseMessage):
             self.merge_request_id = config['merge_request_iid']
 
     def send(self, message):
+        # 检查钉钉配置是否有效
+        if not DINGDING_BOT_WEBHOOK or not DINGDING_SECRET or DINGDING_BOT_WEBHOOK == "your_dingtalk_webhook_url_here":
+            log.info("钉钉配置未设置或无效，跳过钉钉通知")
+            return True
+            
         if self.type == 'merge_request':
             return self.send_dingtalk_message_by_sign(message)
         else:
@@ -106,5 +111,10 @@ class DingtalkResponse(AbstractResponseMessage):
         return sign
 
 if __name__ == '__main__':
-    dingtalk = DingtalkResponse(1, 1)
+    config = {
+        'type': 'merge_request',
+        'project_id': 1,
+        'merge_request_iid': 1
+    }
+    dingtalk = DingtalkResponse(config)
     dingtalk.send("test message")

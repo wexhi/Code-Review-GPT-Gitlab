@@ -51,8 +51,8 @@ class LogHandler(logging.Logger):
         else:
             file_handler.setLevel(level)
         formatter = logging.Formatter(
-            '%(asctime)s.%(msecs)03d %(levelname)s | [%(threadName)s] %(name)s [%(lineno)d] | %(filename)s %(funcName)s | %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S')
+            '%(asctime)s %(levelname)s | [%(threadName)s] %(message)s',
+            datefmt='%H:%M:%S')
 
         file_handler.setFormatter(formatter)
         self.file_handler = file_handler
@@ -62,8 +62,8 @@ class LogHandler(logging.Logger):
 
         stream_handler = logging.StreamHandler()
         formatter = logging.Formatter(
-            '%(asctime)s.%(msecs)03d %(levelname)s | [%(threadName)s] %(name)s [%(lineno)d] | %(filename)s %(funcName)s | %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S')
+            '%(asctime)s %(levelname)s | [%(threadName)s] %(message)s',
+            datefmt='%H:%M:%S')
         stream_handler.setFormatter(formatter)
 
         if not level:
