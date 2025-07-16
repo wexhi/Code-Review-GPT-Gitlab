@@ -11,3 +11,8 @@ __pycache__/
 /config/config_local.py
 
 .idea/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
