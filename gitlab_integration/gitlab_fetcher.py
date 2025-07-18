@@ -160,6 +160,70 @@ class GitlabMergeRequestFetcher:
             log.error(f"获取commit {commit_id} 变更失败: {response.status_code} {response.text}")
             return []
 
+    @retry(stop_max_attempt_number=3, wait_fixed=2000)
+    def get_existing_notes(self, force=False):
+        """
+        Get existing notes/comments from the merge request
+        :return: notes list
+        """
+        if hasattr(self, '_notes_cache') and self._notes_cache and not force:
+            return self._notes_cache
+        
+        # URL for the GitLab API endpoint
+        url = f"{GITLAB_SERVER_URL}/api/v4/projects/{self.project_id}/merge_requests/{self.iid}/notes"
+
+        # Headers for the request
+        headers = {
+            "PRIVATE-TOKEN": GITLAB_PRIVATE_TOKEN
+        }
+
+        # Make the GET request
+        response = requests.get(url, headers=headers)
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            self._notes_cache = response.json()
+            return response.json()
+        else:
+            log.error(f"获取MR notes失败: {response.status_code} {response.text}")
+            return []
+
+    def get_reviewed_commits(self, force=False):
+        """
+        获取已经被审查过的commit列表
+        通过分析现有的评论来判断哪些commits已经被审查过
+        :return: 已审查的commit ID列表
+        """
+        import re
+        
+        existing_notes = self.get_existing_notes(force)
+        if not existing_notes:
+            return []
+        
+        reviewed_commits = set()
+        
+        for note in existing_notes:
+            if note.get('system', False):  # 跳过系统消息
+                continue
+            
+            body = note.get('body', '')
+            if not body:
+                continue
+            
+            # 查找评论中的commit ID（通常是8位短ID）
+            # 匹配格式如: "🔍 Commit 审查: `12345678`" 或 "Commit 审查: `12345678`"
+            commit_matches = re.findall(r'(?:🔍\s*)?[Cc]ommit\s*审查?\s*[：:]\s*`([a-f0-9]{8})`', body)
+            if commit_matches:
+                reviewed_commits.update(commit_matches)
+            
+            # 也匹配其他可能的格式
+            commit_matches = re.findall(r'`([a-f0-9]{8})`', body)
+            if commit_matches:
+                reviewed_commits.update(commit_matches)
+        
+        log.info(f"📋 发现 {len(reviewed_commits)} 个已审查的commits: {list(reviewed_commits)}")
+        return list(reviewed_commits)
+
 # gitlab仓库clone和管理
 class GitlabRepoManager:
     def __init__(self, project_id, branch_name = ""):

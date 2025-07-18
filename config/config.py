@@ -23,10 +23,10 @@ llm_api_impl = "large_model.api.default_api.DefaultApi"
 # 改为 Gemini 配置
 api_config = {
     "api_key": os.getenv("GEMINI_API_KEY", ""),  # 或直接写入 "your-gemini-api-key"
-    "model": 'gemini-2.5-pro',  # 或其他 Gemini 模型
+    "model": 'gemini-1.5-pro',  # 或其他 Gemini 模型
     "provider": "gemini",
     "temperature": 0.7,  # 可选参数
-    "max_tokens": 4096,  # 设置输出token限制
+    "max_tokens": 8192,  # 增加输出token限制以支持多文件commit审查
     "set_verbose": True,  # 启用详细日志用于调试
 }
 
@@ -99,7 +99,7 @@ DINGDING_SECRET = ""       # 设为空字符串禁用钉钉通知
 
 # ------------- code review settings --------------------
 # 支持审查的文件类型
-SUPPORTED_FILE_TYPES = ['.py', '.java', '.class', '.vue', ".go", ".c", ".cpp", ".dart"]
+SUPPORTED_FILE_TYPES = ['.py', '.class', '.vue', ".go", ".c", ".cpp", ".dart"]
 
 # 忽略审查的文件类型
 IGNORE_FILE_TYPES = ["mod.go"]
@@ -112,27 +112,30 @@ MAX_CONTENT_LENGTH = 500000  # 最大内容长度（字符数）
 MAX_DIFF_LENGTH = 100000     # 最大diff长度（字符数）
 MAX_SOURCE_LENGTH = 200000   # 最大源代码长度（字符数）
 
-# ------------- 重复控制设置 --------------------
-# 是否启用重复评论检查（避免重复发送相同内容）
-ENABLE_DUPLICATE_CHECK = os.getenv("ENABLE_DUPLICATE_CHECK", "true").split('#')[0].strip().lower() == "true"
 
-# 评论相似度阈值（0.0-1.0，数值越高要求越严格）
-SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.8").split('#')[0].strip())
 
-# 是否只在MR首次打开时审查（避免多次触发）
-REVIEW_ONLY_ON_FIRST_OPEN = os.getenv("REVIEW_ONLY_ON_FIRST_OPEN", "false").split('#')[0].strip().lower() == "true"
+# ------------- 应用程序行为配置 --------------------
 
-# 是否在MR更新时重新审查（仅在REVIEW_ONLY_ON_FIRST_OPEN=false时生效）
-REVIEW_ON_UPDATE = os.getenv("REVIEW_ON_UPDATE", "true").split('#')[0].strip().lower() == "true"
+# 重复控制设置
+ENABLE_DUPLICATE_CHECK = True     # 是否启用重复评论检查（避免重复发送相同内容）
+SIMILARITY_THRESHOLD = 0.8        # 评论相似度阈值（0.0-1.0，数值越高要求越严格）
 
+# MR审查触发控制
+REVIEW_ONLY_ON_FIRST_OPEN = False # 是否只在MR首次打开时审查（避免多次触发,保持False即可）
+REVIEW_ON_UPDATE = True           # 是否在MR更新时重新审查（仅在 REVIEW_ONLY_ON_FIRST_OPEN=false 时生效）
+
+# Commit审查设置
 # 是否对MR中的每个commit进行单独审查
-REVIEW_PER_COMMIT = os.getenv("REVIEW_PER_COMMIT", "false").split('#')[0].strip().lower() == "true"
+# （如果为true，则MR前的每个commit都会进行审查，如果为false，则只对MR进行一次审查（此时建议打开 SHOW_DETAILED_FILE_REVIEWS ））
+REVIEW_PER_COMMIT = True          
+MAX_FILES_PER_COMMIT = 20         # 每个commit审查的最大文件数限制
+COMMIT_REVIEW_MODE = "simple"   # Per-commit审查模式：simple（简化模式）或 detailed（详细模式）
 
-# 每个commit审查的最大文件数限制
-MAX_FILES_PER_COMMIT = int(os.getenv("MAX_FILES_PER_COMMIT", "20").split('#')[0].strip())
-
-# Per-commit审查模式：simple（简化模式，只关注diff）或 detailed（详细模式，包含完整分析）
-COMMIT_REVIEW_MODE = os.getenv("COMMIT_REVIEW_MODE", "simple").split('#')[0].strip().lower()
+# 其他功能开关
+ENABLE_INLINE_COMMENTS = False   # 是否启用inline评论功能（每个diff块生成单独评论, 源码功能，如果大量文件变更，会导致一堆评论）
+SHOW_FILE_LIST_TITLE = False     # 是否在总结评论中显示"修改文件列表"标题
+REVIEW_SECTION_TITLE = ""        # 自定义审查部分的标题，设为空字符串则不显示标题
+SHOW_DETAILED_FILE_REVIEWS = False  # 是否在总结中显示详细的文件审查内容（评分、优点、问题点等）
 
 # Validate required environment variables
 if not GITLAB_PRIVATE_TOKEN:

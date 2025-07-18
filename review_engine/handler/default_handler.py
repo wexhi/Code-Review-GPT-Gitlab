@@ -59,7 +59,22 @@ def chat_review(changes, generate_review, *args, **kwargs):
         concurrent.futures.wait(futures)
 
     log.info(f'✅ Code review 完成，生成了 {len(review_results)} 个审查结果')
-    return "<details open><summary><h1>修改文件列表</h1></summary>" + "\n\n".join(review_results) +"</details>" if review_results else ""
+    
+    # 根据配置决定是否显示文件列表标题
+    from config.config import SHOW_FILE_LIST_TITLE, REVIEW_SECTION_TITLE
+    
+    if not review_results:
+        return ""
+    
+    if SHOW_FILE_LIST_TITLE:
+        # 显示传统的文件列表标题
+        return "<details open><summary><h1>修改文件列表</h1></summary>" + "\n\n".join(review_results) +"</details>"
+    elif REVIEW_SECTION_TITLE:
+        # 显示自定义标题
+        return f"<details open><summary><h1>{REVIEW_SECTION_TITLE}</h1></summary>" + "\n\n".join(review_results) +"</details>"
+    else:
+        # 不显示任何标题，直接返回内容
+        return "\n\n".join(review_results)
 
 
 def chat_review_summary(changes, model):
@@ -305,11 +320,30 @@ class MainReviewHandle(ReviewHandle):
 
     def default_handle(self, changes, merge_info, hook_info, reply, model, gitlab_fetcher):
         if changes and len(changes) <= MAX_FILES:
+            # 生成总结评论
             review_summary = chat_review_summary(changes, model)
-            review_info = chat_review(changes, generate_review_note_with_context, model, gitlab_fetcher, merge_info)
-            review_info = review_summary + review_info
+            
+            # 根据配置决定是否包含详细文件审查
+            from config.config import SHOW_DETAILED_FILE_REVIEWS
+            
+            if SHOW_DETAILED_FILE_REVIEWS:
+                # 包含详细文件审查（传统方式）
+                log.info("📝 详细文件审查功能已启用，生成详细审查内容")
+                review_info = chat_review(changes, generate_review_note_with_context, model, gitlab_fetcher, merge_info)
+                review_info = review_summary + review_info
+            else:
+                # 只显示总结，不包含详细文件审查
+                log.info("📝 详细文件审查功能已禁用，只显示总结内容")
+                review_info = review_summary
 
-            review_inline_comments = chat_review_inline_comment(changes, model, merge_info)
+            # 根据配置决定是否生成inline评论
+            from config.config import ENABLE_INLINE_COMMENTS
+            review_inline_comments = None
+            if ENABLE_INLINE_COMMENTS:
+                log.info("📝 Inline评论功能已启用，开始生成inline评论")
+                review_inline_comments = chat_review_inline_comment(changes, model, merge_info)
+            else:
+                log.info("📝 Inline评论功能已禁用，跳过inline评论生成")
 
             if review_info:
                 reply.add_reply({
@@ -350,13 +384,19 @@ class MainReviewHandle(ReviewHandle):
                     'msg_type': 'MAIN, SINGLE',
                 })
 
-            if review_inline_comments:
+            # 只有启用了inline评论功能才发送inline评论
+            if ENABLE_INLINE_COMMENTS and review_inline_comments:
+                log.info(f"📝 开始发送 {len(review_inline_comments)} 个inline评论")
                 for comment in review_inline_comments:
                     reply.add_comment({
                         'content': comment,
                         'target': 'gitlab',
                         'msg_type': 'COMMENT',
                     })
+            elif ENABLE_INLINE_COMMENTS:
+                log.info("📝 Inline评论功能已启用，但没有生成inline评论")
+            else:
+                log.info("📝 Inline评论功能已禁用，跳过inline评论发送")
 
 
 
