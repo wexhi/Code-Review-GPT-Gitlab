@@ -2,7 +2,8 @@ import concurrent.futures
 import threading
 
 from retrying import retry
-from config.config import GPT_MESSAGE, MAX_FILES, SUPPORTED_FILE_TYPES, IGNORE_FILE_TYPES, MAX_CONTENT_LENGTH, MAX_DIFF_LENGTH, MAX_SOURCE_LENGTH
+from config.config import MAX_FILES, SUPPORTED_FILE_TYPES, IGNORE_FILE_TYPES, MAX_CONTENT_LENGTH, MAX_DIFF_LENGTH, MAX_SOURCE_LENGTH
+from review_engine.review_prompt import CODE_REVIEW_PROMPT
 from review_engine.abstract_handler import ReviewHandle
 from utils.gitlab_parser import (filter_diff_content, add_context_to_diff, extract_diffs,
                                  get_comment_request_json, extract_comment_end_line)
@@ -277,7 +278,7 @@ def generate_review_note_with_context(change, model, gitlab_fetcher, merge_info)
         messages = [
             {
                 "role": "system",
-                "content": GPT_MESSAGE
+                                    "content": CODE_REVIEW_PROMPT
              },
             {
                 "role": "user",

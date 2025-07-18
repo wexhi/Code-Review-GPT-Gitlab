@@ -130,6 +130,19 @@ REVIEW_ON_UPDATE = True           # 是否在MR更新时重新审查（仅在 RE
 REVIEW_PER_COMMIT = True          
 MAX_FILES_PER_COMMIT = 20         # 每个commit审查的最大文件数限制
 COMMIT_REVIEW_MODE = "simple"   # Per-commit审查模式：simple（简化模式）或 detailed（详细模式）
+ENABLE_ENHANCED_COMMIT_REVIEW = True  # 启用增强版commit审查（防止失误功能）
+# 增强版commit审查功能说明：
+# - 智能token长度预检查，防止超出LLM上下文限制
+# - 占位符替换失败时的自动回退机制
+# - 当内容过多时自动采用分批处理策略
+# - 响应格式验证和错误恢复机制
+# - 渐进式降级处理，确保始终有可用的审查结果
+# 建议在生产环境中启用此功能以提高稳定性
+
+# 增强版commit审查的调优参数
+MAX_ESTIMATED_TOKENS = 50000      # 触发分批处理的预估token阈值
+BATCH_SIZE_FOR_COMMIT_REVIEW = 5  # 分批处理时每批的文件数量
+INCOMPLETE_RESPONSE_THRESHOLD = 0.5  # 占位符缺失超过此比例时触发降级处理（0.5表示50%）
 
 # 其他功能开关
 ENABLE_INLINE_COMMENTS = False   # 是否启用inline评论功能（每个diff块生成单独评论, 源码功能，如果大量文件变更，会导致一堆评论）

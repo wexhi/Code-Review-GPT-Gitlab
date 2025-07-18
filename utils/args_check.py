@@ -10,7 +10,7 @@ def check_config():
     results = []
     try:
         import config.config as config
-        if check_exist(config, ["llm_api_impl", "api_config", "GPT_MESSAGE",
+        if check_exist(config, ["llm_api_impl", "api_config",
                                 "GITLAB_SERVER_URL", "GITLAB_PRIVATE_TOKEN", "DINGDING_BOT_WEBHOOK", "DINGDING_SECRET"]):
             results.append(["Configuration parameter existence", "Passed", "", "✅ Required parameters are available."])
         else:

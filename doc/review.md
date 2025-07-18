@@ -349,7 +349,7 @@ class CustomReviewHandle(ReviewHandle):
       content = filter_diff_content(change['diff'])
       messages = [
           {"role": "system",
-           "content": GPT_MESSAGE
+           "content": CODE_REVIEW_PROMPT  # 从 review_engine.review_prompt 导入
            },
           {"role": "user",
            "content": f"请review这部分代码变更{content}",
