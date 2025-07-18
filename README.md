@@ -182,12 +182,17 @@
 - [🔗 GitLab 配置](#gitlab-配置)
 - [🔧 故障排除](#故障排除)
 
+## 📚 文档导航
+- [📖 快速入门指南](doc/QUICKSTART.md) - 5分钟部署指南
+- [🔧 故障排除指南](doc/TROUBLESHOOTING.md) - 常见问题解决方案
+- [🎯 增强功能说明](doc/enhanced_commit_review.md) - 高级功能配置
+
 ## 快速开始
 
 ### 1. 克隆仓库
 
 ```bash
-git clone git@github.com:mimo-x/Code-Review-GPT-Gitlab.git
+git clone https://github.com/wexhi/Code-Review-GPT-Gitlab.git
 cd Code-Review-GPT-Gitlab
 ```
 
@@ -222,12 +227,21 @@ echo "HOST_IP=192.168.x.x" >> .env
 
 **Windows用户**：
 ```powershell
-# 运行PowerShell脚本自动检测并设置
+# 方法1：运行PowerShell脚本（推荐）
 ./get-host-ip.ps1
 
-# 或手动添加到.env文件
+# 方法2：如果PowerShell脚本有编码问题，使用批处理文件
+./get-host-ip.bat
+
+# 方法3：手动添加到.env文件
 Add-Content .env "HOST_IP=192.168.x.x"
 ```
+
+> **注意**：如果在普通PowerShell终端中运行 `./get-host-ip.ps1` 出现编码错误，请使用 `./get-host-ip.bat` 批处理文件，或者在PowerShell中先运行：
+> ```powershell
+> $OutputEncoding = [System.Text.Encoding]::UTF8
+> [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+> ```
 
 ### 3. 选择部署方式
 

@@ -17,6 +17,25 @@ cd Code-Review-GPT-Gitlab
 
 ## 步骤 2：配置环境变量
 
+### 自动检测并设置宿主机IP（推荐）
+
+**Windows用户**：
+```powershell
+# 方法1：PowerShell脚本
+./get-host-ip.ps1
+
+# 方法2：如果遇到编码问题，使用批处理文件
+./get-host-ip.bat
+```
+
+**Linux/Mac用户**：
+```bash
+# 自动检测IP地址
+make get-host-ip
+```
+
+### 手动配置
+
 ```bash
 # 复制环境变量模板
 cp env.example .env
