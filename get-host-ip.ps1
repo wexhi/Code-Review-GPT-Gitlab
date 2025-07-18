@@ -8,24 +8,57 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 Write-Host "正在检测宿主机IP地址..." -ForegroundColor Yellow
 
 try {
-    # 获取活动网络接口的IP地址
-    $networkAdapters = Get-NetIPAddress -AddressFamily IPv4 | 
-                      Where-Object { 
-                          $_.IPAddress -match "^192\.168\.|^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\." -and 
-                          $_.PrefixOrigin -eq "Dhcp" 
-                      } |
-                      Sort-Object InterfaceIndex
-
-    if ($networkAdapters.Count -gt 0) {
-        Write-Host "[成功] 检测到以下IP地址:" -ForegroundColor Green
+    # 获取所有活动的网络适配器
+    $allAdapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+    
+    $foundIPs = @()
+    
+    foreach ($adapter in $allAdapters) {
+        # 排除虚拟网络接口
+        $isVirtual = $adapter.Name -match "vEthernet|WSL|Hyper-V|VirtualBox|VMware|Loopback"
         
-        foreach ($adapter in $networkAdapters) {
-            $interfaceName = (Get-NetAdapter -InterfaceIndex $adapter.InterfaceIndex).Name
-            Write-Host "   * $($adapter.IPAddress) (接口: $interfaceName)" -ForegroundColor Cyan
+        if (!$isVirtual) {
+            # 获取该适配器的IP地址
+            $ipAddresses = Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
+                          Where-Object { 
+                              $_.IPAddress -match "^192\.168\.|^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\." -and
+                              $_.IPAddress -notmatch "^169\.254\."
+                          }
+            
+            foreach ($ip in $ipAddresses) {
+                $priority = 3  # 默认优先级
+                $type = "其他"
+                
+                # 设置优先级
+                if ($adapter.Name -match "WLAN|Wi-Fi|Wireless") {
+                    $priority = 1
+                    $type = "WiFi"
+                } elseif ($adapter.Name -match "Ethernet|以太网") {
+                    $priority = 2
+                    $type = "以太网"
+                }
+                
+                $foundIPs += [PSCustomObject]@{
+                    IP = $ip.IPAddress
+                    InterfaceName = $adapter.Name
+                    Type = $type
+                    Priority = $priority
+                }
+                
+                Write-Host "[检测] 发现物理网络接口: $($ip.IPAddress) (接口: $($adapter.Name)) - $type" -ForegroundColor Cyan
+            }
         }
+    }
+    
+    # 按优先级排序
+    $foundIPs = $foundIPs | Sort-Object Priority, IP
+    
+    if ($foundIPs.Count -gt 0) {
+        $recommendedIP = $foundIPs[0].IP
+        $recommendedType = $foundIPs[0].Type
         
-        $recommendedIP = $networkAdapters[0].IPAddress
-        Write-Host "`n[推荐] 推荐使用的IP地址: $recommendedIP" -ForegroundColor Green
+        Write-Host "`n[推荐] 推荐使用的IP地址: $recommendedIP ($recommendedType)" -ForegroundColor Green
+        Write-Host "[说明] 已自动排除WSL/Hyper-V虚拟网络接口" -ForegroundColor Yellow
         
         # 询问用户是否要设置到环境变量
         $choice = Read-Host "`n是否将 $recommendedIP 设置到 .env 文件中? (y/n)"
@@ -47,20 +80,7 @@ try {
                 }
                 
                 if (-not $hostIPSet) {
-                    # 在网络配置部分添加HOST_IP
-                    $insertIndex = -1
-                    for ($i = 0; $i -lt $newContent.Count; $i++) {
-                        if ($newContent[$i] -match "网络配置") {
-                            $insertIndex = $i + 1
-                            break
-                        }
-                    }
-                    
-                    if ($insertIndex -gt 0) {
-                        $newContent = $newContent[0..($insertIndex-1)] + "HOST_IP=$recommendedIP" + $newContent[$insertIndex..($newContent.Count-1)]
-                    } else {
-                        $newContent += "HOST_IP=$recommendedIP"
-                    }
+                    $newContent += "HOST_IP=$recommendedIP"
                 }
                 
                 Set-Content ".env" -Value $newContent
@@ -76,8 +96,9 @@ try {
         Write-Host "   http://$recommendedIP:8080/git/webhook" -ForegroundColor Cyan
         
     } else {
-        Write-Host "[错误] 未检测到合适的IP地址" -ForegroundColor Red
+        Write-Host "[错误] 未检测到合适的物理网络接口IP地址" -ForegroundColor Red
         Write-Host "[提示] 请手动设置HOST_IP环境变量" -ForegroundColor Yellow
+        Write-Host "[说明] 可能原因：所有网络接口都是虚拟接口或未连接" -ForegroundColor Yellow
     }
     
 } catch {
