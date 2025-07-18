@@ -1,0 +1,32 @@
+services:
+  codereview:
+    build: .
+    container_name: codereview-uv
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - GITLAB_SERVER_URL=${GITLAB_SERVER_URL}
+      - GITLAB_PRIVATE_TOKEN=${GITLAB_PRIVATE_TOKEN}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DINGDING_BOT_WEBHOOK=${DINGDING_BOT_WEBHOOK:-}
+      - DINGDING_SECRET=${DINGDING_SECRET:-}
+      - DOCKER_ENV=true
+      - HOST_IP=${HOST_IP:-}
+    volumes:
+      - ./logs:/workspace/logs
+      - ./config:/workspace/config
+    networks:
+      - codereview-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  codereview-network:
+    driver: bridge 

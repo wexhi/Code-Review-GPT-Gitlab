@@ -1,0 +1,61 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: codereview-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - codereview
+    networks:
+      - codereview-network
+
+  codereview:
+    build: .
+    container_name: codereview-uv
+    restart: unless-stopped
+    expose:
+      - "80"
+    environment:
+      - GITLAB_SERVER_URL=${GITLAB_SERVER_URL}
+      - GITLAB_PRIVATE_TOKEN=${GITLAB_PRIVATE_TOKEN}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DINGDING_BOT_WEBHOOK=${DINGDING_BOT_WEBHOOK:-}
+      - DINGDING_SECRET=${DINGDING_SECRET:-}
+      - DOCKER_ENV=true
+      - HOST_IP=${HOST_IP:-}
+    volumes:
+      - ./logs:/workspace/logs
+      - ./config:/workspace/config
+    networks:
+      - codereview-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: codereview-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - codereview-network
+    command: redis-server --appendonly yes
+
+volumes:
+  redis-data:
+
+networks:
+  codereview-network:
+    driver: bridge 

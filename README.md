@@ -170,51 +170,372 @@
 
 
 
-# 部署 📖
+# 部署指南 📖
 
-#### Docker 运行
+本项目提供多种部署方式，您可以根据自己的需求选择最适合的方式。
+
+## 目录
+- [🚀 快速开始](#快速开始)
+- [🐳 Docker 部署](#docker-部署)
+- [💻 源代码部署](#源代码部署)
+- [⚙️ 配置说明](#配置说明)
+- [🔗 GitLab 配置](#gitlab-配置)
+- [🔧 故障排除](#故障排除)
+
+## 快速开始
+
+### 1. 克隆仓库
 
 ```bash
 git clone git@github.com:mimo-x/Code-Review-GPT-Gitlab.git
-
 cd Code-Review-GPT-Gitlab
-
-vim ./config/config.py
-
-docker run -d --network bridge --add-host=host.docker.internal:host-gateway -v ./config:/workspace/config -p 8080:80 --name codereview xuxin1/llmcodereview:latest
 ```
 
-#### 源代码运行 💻
-1.**克隆仓库**
+### 2. 配置环境变量
+
+创建 `.env` 文件并配置必要的环境变量：
+
 ```bash
-git clone git@github.com:mimo-x/Code-Review-GPT-Gitlab.git
+# GitLab配置
+GITLAB_SERVER_URL=https://gitlab.com  # 或您的私有GitLab地址
+GITLAB_PRIVATE_TOKEN=your-gitlab-token-here
+
+# 大模型API配置
+GEMINI_API_KEY=your-gemini-api-key-here
+
+# 网络配置（可选）
+HOST_IP=192.168.x.x  # 您的宿主机IP地址
 ```
-2.**安装依赖**
+
+#### 自动检测宿主机IP地址
+
+为了让GitLab能够正确访问您的webhook，您需要设置正确的宿主机IP地址：
+
+**Linux/Mac用户**：
 ```bash
+# 自动检测IP地址
+make get-host-ip
+
+# 手动设置到.env文件
+echo "HOST_IP=192.168.x.x" >> .env
+```
+
+**Windows用户**：
+```powershell
+# 运行PowerShell脚本自动检测并设置
+./get-host-ip.ps1
+
+# 或手动添加到.env文件
+Add-Content .env "HOST_IP=192.168.x.x"
+```
+
+### 3. 选择部署方式
+
+根据您的需求选择以下任一部署方式：
+
+## Docker 部署
+
+Docker 部署是推荐的部署方式，提供了更好的环境一致性和易于管理。
+
+### 方式一：使用 Docker Compose（推荐）🐳
+
+> 🚀 **最简单的部署方式，一键启动所有服务**
+
+```bash
+# 1. 复制环境变量模板
+cp env.example .env
+
+# 2. 编辑环境变量
+vim .env  # 或使用您喜欢的编辑器
+
+# 3. 启动服务
+docker-compose up -d
+
+# 4. 查看服务状态
+docker-compose ps
+docker-compose logs -f codereview
+```
+
+**PowerShell 版本**：
+```powershell
+# 1. 复制环境变量模板
+Copy-Item env.example .env
+
+# 2. 编辑环境变量
+notepad .env
+
+# 3. 启动服务
+docker-compose up -d
+
+# 4. 查看服务状态
+docker-compose ps
+docker-compose logs -f codereview
+```
+
+**使用 Makefile（更简单）**：
+```bash
+# 查看所有可用命令
+make help
+
+# 一键启动（自动创建.env文件）
+make dev
+
+# 查看状态
+make status
+
+# 查看日志
+make logs
+
+# 停止服务
+make down
+```
+
+#### 生产环境部署
+
+对于生产环境，使用包含 Nginx 反向代理的配置：
+
+```bash
+# 使用生产环境配置
+docker-compose -f docker-compose.prod.yml up -d
+
+# 查看所有服务状态
+docker-compose -f docker-compose.prod.yml ps
+```
+
+#### Docker Compose 管理命令
+
+```bash
+# 启动服务
+docker-compose up -d
+
+# 停止服务
+docker-compose down
+
+# 重启服务
+docker-compose restart
+
+# 查看日志
+docker-compose logs -f
+
+# 更新服务
+docker-compose pull
+docker-compose up -d --no-deps --build codereview
+
+# 清理
+docker-compose down -v --rmi all
+```
+
+### 方式二：基于 uv 的 Docker 部署⚡
+
+> 🔥 **使用 uv 作为包管理器，构建更快，性能更优**
+
+```bash
+# 1. 构建镜像
+docker build -t codereview-uv .
+
+# 2. 运行容器
+docker run -d \
+  --network bridge \
+  --add-host=host.docker.internal:host-gateway \
+  --env-file .env \
+  -p 8080:80 \
+  --name codereview-uv \
+  codereview-uv:latest
+
+# 3. 验证运行状态
+docker ps
+docker logs codereview-uv
+```
+
+**PowerShell 版本**：
+```powershell
+# 1. 构建镜像
+docker build -t codereview-uv .
+
+# 2. 运行容器
+docker run -d `
+  --network bridge `
+  --add-host=host.docker.internal:host-gateway `
+  --env-file .env `
+  -p 8080:80 `
+  --name codereview-uv `
+  codereview-uv:latest
+
+# 3. 验证运行状态
+docker ps
+docker logs codereview-uv
+```
+
+### 方式三：使用预构建镜像
+
+```bash
+# 使用官方预构建镜像
+docker run -d \
+  --network bridge \
+  --add-host=host.docker.internal:host-gateway \
+  --env-file .env \
+  -v ./config:/workspace/config \
+  -p 8080:80 \
+  --name codereview \
+  xuxin1/llmcodereview:latest
+```
+
+### Docker 部署优势
+
+- ✅ **环境一致性**：避免环境差异问题
+- ✅ **快速部署**：一键启动，无需配置环境
+- ✅ **易于管理**：容器化管理，支持自动重启
+- ✅ **资源隔离**：独立运行环境
+- ✅ **uv 加速**：比传统 pip 快 10-100 倍
+
+## 源代码部署
+
+适合需要自定义修改或调试的用户。
+
+### 使用 uv（推荐）
+
+```bash
+# 1. 安装 uv 
+curl -LsSf https://astral.sh/uv/install.sh | sh # Linux/Mac
+# 或
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex" # Windows
+
+# 2. 同步依赖
+uv sync
+
+# 3. 配置环境变量
+export GITLAB_SERVER_URL="https://gitlab.com"
+export GITLAB_PRIVATE_TOKEN="your-token"
+export GEMINI_API_KEY="your-api-key"
+
+# 4. 运行应用
+uv run app.py
+```
+
+### 使用传统 pip
+
+```bash
+# 1. 创建虚拟环境
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# 或
+venv\Scripts\activate     # Windows
+
+# 2. 安装依赖
 pip install -r requirements.txt
+
+# 3. 配置环境变量
+export GITLAB_SERVER_URL="https://gitlab.com"
+export GITLAB_PRIVATE_TOKEN="your-token"
+export GEMINI_API_KEY="your-api-key"
+
+# 4. 运行应用
+python app.py
 ```
-3.**修改配置文件**
+
+## 配置说明
+
+### 必需配置
+
+#### GitLab 配置
+
+| 变量名 | 说明 | 示例 |
+|--------|------|------|
+| `GITLAB_SERVER_URL` | GitLab 服务器地址 | `https://gitlab.com` |
+| `GITLAB_PRIVATE_TOKEN` | GitLab 私有访问令牌 | `glpat-xxxxxxxxxxxxxxxxxxxx` |
+
+#### 大模型配置
+
+| 变量名 | 说明 | 示例 |
+|--------|------|------|
+| `GEMINI_API_KEY` | Gemini API 密钥 | `AIzaSyxxxxxxxxxxxxxxxxxxxxxxxx` |
+
+### 可选配置
+
+#### 钉钉通知（可选）
+
+| 变量名 | 说明 | 示例 |
+|--------|------|------|
+| `DINGDING_BOT_WEBHOOK` | 钉钉机器人 Webhook | `https://oapi.dingtalk.com/...` |
+| `DINGDING_SECRET` | 钉钉机器人密钥 | `SECxxxxxxxxxxxxxxxxxx` |
+
+### 高级配置
+
+您可以在 `config/config.py` 中调整更多配置：
+
+```python
+# 增强版commit审查功能
+ENABLE_ENHANCED_COMMIT_REVIEW = True
+MAX_ESTIMATED_TOKENS = 50000
+BATCH_SIZE_FOR_COMMIT_REVIEW = 5
+
+# 支持的文件类型
+SUPPORTED_FILE_TYPES = ['.py', '.js', '.vue', '.go', '.java', '.cpp']
+
+# 审查设置
+REVIEW_PER_COMMIT = True
+MAX_FILES_PER_COMMIT = 20
+```
+
+## 故障排除
+
+### 常见问题
+
+#### 1. 容器无法启动
+
+**症状**：`docker ps` 显示容器已退出
+
+**解决方案**：
 ```bash
-vim config/config.py
+# 查看详细日志
+docker logs codereview-uv
+
+# 检查环境变量
+docker exec codereview-uv printenv | grep -E "(GITLAB|GEMINI)"
 ```
 
-4.**运行**
+#### 2. Webhook 接收失败
+
+**症状**：GitLab 显示 webhook 调用失败
+
+**解决方案**：
 ```bash
-python3 app.py
+# 检查应用是否运行
+curl http://localhost:8080/git/webhook
+
+# 查看应用日志
+docker logs codereview-uv -f
+
+# 验证网络连通性
+ping your-gitlab-server
 ```
-#### **配置Gitlab webhook**
-> 填写```Webhook URL```时，请在域名后添加路径```/git/webhook```，例如：```http://example.com/git/webhook```
-<p align="center">
-  <img src="doc/img/webhookconfig.png" style="width:300px;"/>
-</p>
 
-#### **尝试发起一个 Merge Request 吧🎉**
+#### 3. API 调用失败
 
+**症状**：日志显示 API 密钥错误
 
+**解决方案**：
+```bash
+# 检查 API 密钥是否正确
+echo $GEMINI_API_KEY
 
+# 验证 API 密钥有效性
+curl -H "Authorization: Bearer $GEMINI_API_KEY" \
+  https://generativelanguage.googleapis.com/v1/models
+```
 
+### 调试技巧
+```
 
+## 🎯 快速测试
 
+部署完成后，创建一个测试 Merge Request：
+
+1. **创建新分支**
+2. **修改一个 Python 文件**
+3. **提交并推送**
+4. **创建 Merge Request**
+5. **观察 AI 审查评论**
 
 # 待办清单 📌
 
