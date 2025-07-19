@@ -321,21 +321,30 @@ class MainReviewHandle(ReviewHandle):
 
     def default_handle(self, changes, merge_info, hook_info, reply, model, gitlab_fetcher):
         if changes and len(changes) <= MAX_FILES:
-            # 生成总结评论
-            review_summary = chat_review_summary(changes, model)
+            # 获取审查模式配置
+            from config.config import REVIEW_MODE
             
-            # 根据配置决定是否包含详细文件审查
-            from config.config import SHOW_DETAILED_FILE_REVIEWS
+            log.info(f"📝 当前审查模式: {REVIEW_MODE}")
             
-            if SHOW_DETAILED_FILE_REVIEWS:
-                # 包含详细文件审查（传统方式）
-                log.info("📝 详细文件审查功能已启用，生成详细审查内容")
-                review_info = chat_review(changes, generate_review_note_with_context, model, gitlab_fetcher, merge_info)
-                review_info = review_summary + review_info
+            # 根据模式决定是否生成MR总结
+            if REVIEW_MODE in ["summary_only", "summary_and_commit"]:
+                # 生成总结评论
+                review_summary = chat_review_summary(changes, model)
+                
+                # 根据模式决定是否包含详细文件审查
+                if REVIEW_MODE == "summary_only":
+                    # 模式1：只有MR总结（包含详细文件审查）
+                    log.info("📝 模式1：只有MR总结，生成详细文件审查内容")
+                    review_info = chat_review(changes, generate_review_note_with_context, model, gitlab_fetcher, merge_info)
+                    review_info = review_summary + review_info
+                else:
+                    # 模式2：MR总结 + commit审查（MR总结不包含详细文件审查）
+                    log.info("📝 模式2：MR总结 + commit审查，MR总结只包含概览")
+                    review_info = review_summary
             else:
-                # 只显示总结，不包含详细文件审查
-                log.info("📝 详细文件审查功能已禁用，只显示总结内容")
-                review_info = review_summary
+                # 模式3：只有commit审查，不生成MR总结
+                log.info("📝 模式3：只有commit审查，跳过MR总结生成")
+                review_info = None
 
             # 根据配置决定是否生成inline评论
             from config.config import ENABLE_INLINE_COMMENTS
@@ -347,8 +356,21 @@ class MainReviewHandle(ReviewHandle):
                 log.info("📝 Inline评论功能已禁用，跳过inline评论生成")
 
             if review_info:
+                # 构建增强的MR总结
+                enhanced_summary = review_info
+                
+                # 如果启用了commit审查，添加说明
+                from config.config import REVIEW_MODE
+                if REVIEW_MODE == "summary_and_commit":
+                    enhanced_summary += f"\n\n---\n\n"
+                    enhanced_summary += f"## 📋 审查说明\n\n"
+                    enhanced_summary += f"✅ **MR总结**: 已完成整体变更分析\n"
+                    enhanced_summary += f"✅ **Commit审查**: 每个commit都有详细的单独审查（请查看下方commit评论）\n"
+                    enhanced_summary += f"📊 **统计信息**: {len(changes)} 个文件变更\n\n"
+                    enhanced_summary += f"💡 **建议**: 请同时查看MR总结和各个commit的详细审查结果，获得完整的代码质量评估。\n"
+                
                 reply.add_reply({
-                    'content': review_info,
+                    'content': enhanced_summary,
                     'msg_type': 'MAIN, SINGLE',
                     'target': 'all',
                 })
@@ -362,7 +384,8 @@ class MainReviewHandle(ReviewHandle):
                         f"- **目标分支**: `{hook_info['object_attributes']['target_branch']}`\n\n"
                         f"### 变更详情\n"
                         f"- **修改文件个数**: `{len(changes)}`\n"
-                        f"- **Code Review 状态**: ✅\n"
+                        f"- **Commit数量**: 请查看下方commit评论\n"
+                        f"- **Code Review 状态**: ✅ (MR总结 + Per-Commit审查)\n"
                     ),
                     'target': 'dingtalk',
                     'msg_type': 'MAIN, SINGLE',
@@ -419,7 +442,43 @@ class MainReviewHandle(ReviewHandle):
             })
 
         else:
-            log.error(f"获取merge_request信息失败，project_id: {hook_info['project']['id']} |"
-                      f" merge_iid: {hook_info['object_attributes']['iid']} | merge_info: {merge_info}")
+            # changes为空的情况 - 可能MR刚创建还没有变更
+            if changes is None:
+                log.warning(f"无法获取MR #{hook_info['object_attributes']['iid']} 的变更信息")
+                reply.add_reply({
+                    'title': '__MAIN_REVIEW__',
+                    'content': (
+                        f"## 项目名称: **{hook_info['project']['name']}**\n\n"
+                        f"### 合并请求详情\n"
+                        f"- **MR URL**: [查看合并请求]({hook_info['object_attributes']['url']})\n"
+                        f"- **源分支**: `{hook_info['object_attributes']['source_branch']}`\n"
+                        f"- **目标分支**: `{hook_info['object_attributes']['target_branch']}`\n\n"
+                        f"### 状态\n"
+                        f"- **变更文件个数**: 无法获取\n"
+                        f"- **备注**: 无法获取变更信息，可能MR刚创建还未同步 ⚠️\n"
+                    ),
+                    'target': 'dingtalk',
+                    'msg_type': 'MAIN, SINGLE',
+                })
+            elif len(changes) == 0:
+                log.info(f"MR #{hook_info['object_attributes']['iid']} 暂无文件变更")
+                reply.add_reply({
+                    'title': '__MAIN_REVIEW__',
+                    'content': (
+                        f"## 项目名称: **{hook_info['project']['name']}**\n\n"
+                        f"### 合并请求详情\n"
+                        f"- **MR URL**: [查看合并请求]({hook_info['object_attributes']['url']})\n"
+                        f"- **源分支**: `{hook_info['object_attributes']['source_branch']}`\n"
+                        f"- **目标分支**: `{hook_info['object_attributes']['target_branch']}`\n\n"
+                        f"### 状态\n"
+                        f"- **变更文件个数**: 0\n"
+                        f"- **备注**: 当前MR暂无文件变更 📝\n"
+                    ),
+                    'target': 'dingtalk',
+                    'msg_type': 'MAIN, SINGLE',
+                })
+            else:
+                log.error(f"处理MR时出现未知错误，project_id: {hook_info['project']['id']} |"
+                          f" merge_iid: {hook_info['object_attributes']['iid']} | changes: {type(changes)}")
 
 

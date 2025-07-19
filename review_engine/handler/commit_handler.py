@@ -13,13 +13,21 @@ from config.config import (
     ENABLE_ENHANCED_COMMIT_REVIEW,
     MAX_ESTIMATED_TOKENS,
     BATCH_SIZE_FOR_COMMIT_REVIEW,
-    INCOMPLETE_RESPONSE_THRESHOLD
+    INCOMPLETE_RESPONSE_THRESHOLD,
+    REVIEW_MODE,
+    # 新增的上下文分析配置
+    ENHANCED_CONTEXT_ANALYSIS,
+    CONTEXT_ANALYSIS_MODE,
+    CONTEXT_SEMANTIC_ANALYSIS,
+    CONTEXT_DEPENDENCY_ANALYSIS,
+    CONTEXT_IMPACT_ANALYSIS
 )
-from review_engine.review_prompt import CODE_REVIEW_PROMPT
+from review_engine.review_prompt import CODE_REVIEW_PROMPT, ENHANCED_CONTEXT_REVIEW_PROMPT
 from review_engine.abstract_handler import ReviewHandle
 from utils.gitlab_parser import (
     filter_diff_content, 
     add_context_to_diff, 
+    add_enhanced_context_to_diff,  # 新增
     extract_diffs,
     get_comment_request_json, 
     extract_comment_end_line
@@ -684,8 +692,11 @@ def generate_detailed_commit_review_note(commit_info, commit_changes, model, git
                 log.warning(f"⚠️ 文件 {file_path} 的源代码过长，将不添加上下文")
                 source_code = None
             
-            # 添加上下文
-            content = add_context_to_diff(diff_content, source_code)
+            # 添加上下文 - 使用增强版功能
+            if ENHANCED_CONTEXT_ANALYSIS:
+                content = add_enhanced_context_to_diff(diff_content, source_code, CONTEXT_ANALYSIS_MODE)
+            else:
+                content = add_context_to_diff(diff_content, source_code)
             
             # 检查最终内容长度限制
             if content and len(content) > MAX_CONTENT_LENGTH:
@@ -697,8 +708,38 @@ def generate_detailed_commit_review_note(commit_info, commit_changes, model, git
                 log.warning(f"⚠️ 文件 {file_path} 处理后内容为空，跳过审查")
                 continue
             
-            # 为单个文件构建详细审查提示词
-            file_prompt = f"""
+            # 选择提示词模板
+            if ENHANCED_CONTEXT_ANALYSIS and (CONTEXT_SEMANTIC_ANALYSIS or CONTEXT_DEPENDENCY_ANALYSIS or CONTEXT_IMPACT_ANALYSIS):
+                review_prompt = ENHANCED_CONTEXT_REVIEW_PROMPT
+                prompt_intro = """
+你是一位资深编程专家，请对以下文件的变更进行深入的上下文分析和代码审查。
+特别注意：你将收到包含丰富上下文信息的代码变更，请充分利用这些上下文进行分析。
+
+**文件信息**:
+- 文件路径: {file_path}
+- 所属Commit: {commit_id}
+- 提交信息: {commit_message}
+- 作者: {commit_author}
+
+**增强的文件变更内容（包含完整上下文）**:
+{content}
+
+请重点关注：
+🔍 **上下文理解**: 分析变更在整体代码结构中的位置和作用
+🔗 **依赖关系**: 识别对相关组件的影响和连锁反应
+🎯 **语义分析**: 理解业务逻辑意图和功能一致性
+⚠️ **风险识别**: 基于上下文发现潜在问题和边界条件
+
+{review_prompt}
+
+请充分利用提供的上下文信息（导入、类、函数、前后代码），进行深入全面的分析。
+                """.format(
+                    file_path=file_path, commit_id=commit_id, commit_message=commit_message, 
+                    commit_author=commit_author, content=content, review_prompt=review_prompt
+                )
+            else:
+                review_prompt = CODE_REVIEW_PROMPT
+                prompt_intro = f"""
 你是一位资深编程专家，请对以下文件的变更进行详细的代码审查。
 
 **文件信息**:
@@ -710,7 +751,7 @@ def generate_detailed_commit_review_note(commit_info, commit_changes, model, git
 **文件变更内容（包含上下文）**:
 {content}
 
-{CODE_REVIEW_PROMPT}
+{review_prompt}
 
 请特别注意:
 1. 代码质量和最佳实践
@@ -733,10 +774,12 @@ def generate_detailed_commit_review_note(commit_info, commit_changes, model, git
 请保持分析详细且专业，重点关注代码质量和潜在问题。
 """
             
+            file_prompt = prompt_intro
+            
             messages = [
                 {
                     "role": "system",
-                    "content": CODE_REVIEW_PROMPT
+                    "content": review_prompt
                 },
                 {
                     "role": "user",
@@ -901,10 +944,11 @@ class CommitReviewHandle(ReviewHandle):
     """处理每个commit的单独审查"""
     
     def merge_handle(self, gitlabMergeRequestFetcher, gitlabRepoManager, hook_info, reply, model):
-        from config.config import REVIEW_PER_COMMIT
+        from config.config import REVIEW_MODE
         
-        if not REVIEW_PER_COMMIT:
-            log.info("📝 Per-commit审查已禁用，跳过")
+        # 检查是否需要执行commit审查
+        if REVIEW_MODE not in ["summary_and_commit", "commit_only"]:
+            log.info(f"📝 当前模式为 {REVIEW_MODE}，跳过commit审查")
             return
         
         try:
